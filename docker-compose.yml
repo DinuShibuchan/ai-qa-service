@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  db:
+    # Official pgvector docker image containing PostgreSQL + pgvector pre-installed
+    image: pgvector/pgvector:pg16
+    container_name: postgres_db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_qa_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_qa_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: fastapi_app
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_NAME=AI QA Service
+      - APP_ENV=development
+      # Connects to the db container service by name
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/ai_qa_db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=gpt-4o-mini
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
