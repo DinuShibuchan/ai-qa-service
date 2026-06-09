@@ -9,7 +9,10 @@ from app.schemas.document import DocumentCreate
 # Initialize AsyncOpenAI client
 openai_client = None
 if settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip() and settings.OPENAI_API_KEY != "your-openai-api-key-here":
-    openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    client_kwargs = {"api_key": settings.OPENAI_API_KEY}
+    if settings.OPENAI_BASE_URL and settings.OPENAI_BASE_URL.strip():
+        client_kwargs["base_url"] = settings.OPENAI_BASE_URL
+    openai_client = AsyncOpenAI(**client_kwargs)
 
 class DocumentService:
     @staticmethod

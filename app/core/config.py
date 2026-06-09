@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     # OpenAI Settings
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_BASE_URL: str = ""
 
 
 settings = Settings()
