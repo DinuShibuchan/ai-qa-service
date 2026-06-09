@@ -11,7 +11,10 @@ from app.routes.api import api_router
 from app.routes.health import router as health_router
 from app.routes.ask import router as ask_router
 from app.routes.document import router as document_router
+from app.routes.upload import router as upload_router
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
+import os
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,15 +40,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Set up CORS middleware
-if settings.CORS_ORIGINS:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[str(origin) for origin in settings.CORS_ORIGINS],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# Enable global CORS for all origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,  # Set to False when using allow_origins=["*"] to follow CORS specs
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Register routes with the configured prefix
 app.include_router(api_router, prefix=settings.API_V1_STR)
@@ -54,17 +56,11 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 app.include_router(health_router, prefix="/health", tags=["system"])
 app.include_router(ask_router, prefix="/ask", tags=["qa"])
 app.include_router(document_router, prefix="/documents", tags=["documents"])
+app.include_router(upload_router, prefix="/upload", tags=["documents"])
 
-@app.get("/")
-async def root():
-    return {
-        "message": f"Welcome to the {settings.APP_NAME}!",
-        "docs_url": "/docs",
-        "endpoints": {
-            "health_check": "/health",
-            "ask": "/ask",
-            "documents": "/documents",
-            "api_v1_prefix": settings.API_V1_STR
-        }
-    }
+# Ensure static files directory exists
+os.makedirs("static", exist_ok=True)
+
+# Serve static frontend at root path (must be mounted last so routes take priority)
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
