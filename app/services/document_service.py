@@ -6,22 +6,54 @@ from app.core.config import settings
 from app.models.document import Document
 from app.schemas.document import DocumentCreate
 
-# Initialize AsyncOpenAI client
+# Initialize clients
+import google.generativeai as genai
+
+use_gemini_sdk = False
 openai_client = None
+
 if settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip() and settings.OPENAI_API_KEY != "your-openai-api-key-here":
-    client_kwargs = {"api_key": settings.OPENAI_API_KEY}
-    if settings.OPENAI_BASE_URL and settings.OPENAI_BASE_URL.strip():
-        client_kwargs["base_url"] = settings.OPENAI_BASE_URL
-    openai_client = AsyncOpenAI(**client_kwargs)
+    key_str = settings.OPENAI_API_KEY.strip()
+    if key_str.startswith("AIzaSy") or key_str.startswith("AQ."):
+        use_gemini_sdk = True
+        genai.configure(api_key=key_str)
+    else:
+        client_kwargs = {"api_key": key_str}
+        if settings.OPENAI_BASE_URL and settings.OPENAI_BASE_URL.strip():
+            client_kwargs["base_url"] = settings.OPENAI_BASE_URL
+        openai_client = AsyncOpenAI(**client_kwargs)
 
 class DocumentService:
     @staticmethod
     async def get_embedding(text: str) -> List[float]:
         """
-        Queries the OpenAI API to generate a vector embedding for the given text
-        using the text-embedding-3-small model.
-        Falls back to generating a mock unit vector if the API fails (e.g., quota exceeded).
+        Queries the OpenAI API or Google Generative AI SDK to generate a vector embedding
+        for the given text, adjusted to 1536 dimensions.
+        Falls back to generating a mock unit vector if the API fails.
         """
+        if use_gemini_sdk:
+            try:
+                import asyncio
+                from functools import partial
+                # Generate 1536-dimensional embedding using gemini-embedding-2
+                emb = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    partial(
+                        genai.embed_content,
+                        model="models/gemini-embedding-2",
+                        content=text,
+                        output_dimensionality=1536
+                    )
+                )
+                return emb['embedding']
+            except Exception as e:
+                print(f"[WARNING] Gemini Embeddings API failed: {str(e)}. Generating a mock 1536-dim vector for testing.")
+                import random
+                import math
+                vec = [random.uniform(-1.0, 1.0) for _ in range(1536)]
+                norm = math.sqrt(sum(x * x for x in vec))
+                return [x / norm for x in vec]
+
         if not openai_client:
             # Generate a mock vector if key is not set
             import random

@@ -2,18 +2,26 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from openai import AsyncOpenAI
+import google.generativeai as genai
 from app.core.config import settings
 from app.models.qa import Question, Answer
 from app.schemas.qa import QuestionCreate, AnswerCreate, AskRequest, AskResponse
 
-# Initialize AsyncOpenAI client
-# If the key is not set or uses the default template text, client remains None.
+# Initialize clients
+# If the key starts with "AIzaSy" or "AQ.", we use the official Google Generative AI SDK directly.
+use_gemini_sdk = False
 openai_client = None
+
 if settings.OPENAI_API_KEY and settings.OPENAI_API_KEY.strip() and settings.OPENAI_API_KEY != "your-openai-api-key-here":
-    client_kwargs = {"api_key": settings.OPENAI_API_KEY}
-    if settings.OPENAI_BASE_URL and settings.OPENAI_BASE_URL.strip():
-        client_kwargs["base_url"] = settings.OPENAI_BASE_URL
-    openai_client = AsyncOpenAI(**client_kwargs)
+    key_str = settings.OPENAI_API_KEY.strip()
+    if key_str.startswith("AIzaSy") or key_str.startswith("AQ."):
+        use_gemini_sdk = True
+        genai.configure(api_key=key_str)
+    else:
+        client_kwargs = {"api_key": key_str}
+        if settings.OPENAI_BASE_URL and settings.OPENAI_BASE_URL.strip():
+            client_kwargs["base_url"] = settings.OPENAI_BASE_URL
+        openai_client = AsyncOpenAI(**client_kwargs)
 
 class QAService:
     @staticmethod
@@ -73,10 +81,10 @@ class QAService:
         if not question_text:
             raise ValueError("Question text cannot be empty or whitespaces only.")
         
-        # Verify OpenAI integration is configured
-        if not openai_client:
+        # Verify integration is configured
+        if not openai_client and not use_gemini_sdk:
             raise ValueError(
-                "OpenAI API key is not configured. "
+                "API key is not configured. "
                 "Please configure OPENAI_API_KEY in your environment or .env file."
             )
         
@@ -112,18 +120,42 @@ class QAService:
         await db.commit()
         await db.refresh(db_question)
 
-        # 3. Query OpenAI Chat Completion API asynchronously
+        # 3. Query LLM endpoint
         try:
-            response = await openai_client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                max_tokens=500,
-                temperature=0.7
-            )
-            ai_response = response.choices[0].message.content.strip()
+            if use_gemini_sdk:
+                model_name = settings.OPENAI_MODEL or "gemini-1.5-flash-latest"
+                if model_name.startswith("models/"):
+                    model_name = model_name[7:]
+                
+                # Normalize model name for Gemini SDK compatibility
+                if "1.5-flash" in model_name:
+                    model_name = "gemini-flash-latest"
+                elif "1.5-pro" in model_name:
+                    model_name = "gemini-pro-latest"
+                
+                model = genai.GenerativeModel(
+                    model_name=model_name,
+                    system_instruction=system_prompt
+                )
+                response = await model.generate_content_async(
+                    user_prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.7,
+                        max_output_tokens=1000
+                    )
+                )
+                ai_response = response.text.strip()
+            else:
+                response = await openai_client.chat.completions.create(
+                    model=settings.OPENAI_MODEL,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=500,
+                    temperature=0.7
+                )
+                ai_response = response.choices[0].message.content.strip()
         except Exception as e:
             print(f"[WARNING] OpenAI Chat Completions failed: {str(e)}. Falling back to mock answer for testing.")
             if retrieved_contents:
