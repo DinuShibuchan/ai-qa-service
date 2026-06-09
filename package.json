@@ -1,0 +1,12 @@
+{
+  "name": "ai-qa-service",
+  "version": "1.0.0",
+  "description": "AI-powered Q&A service with RAG using FastAPI and Gemini",
+  "scripts": {
+    "prestart": "pip install -r requirements.txt",
+    "start": "python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload",
+    "start:prod": "python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+  },
+  "keywords": ["ai", "qa", "rag", "fastapi", "gemini"],
+  "license": "MIT"
+}
